@@ -274,16 +274,16 @@ class R3PComms:
                 seg_val = struct.unpack("f", seg_data)[0]
                 unit = "W"
             elif seg_type == 13:
-                name = "Line Frequency?"
-                seg_val = struct.unpack("<L", seg_data)[0] / 10
-                unit = "Hz"
+                name = "Remaining Time Limit"
+                seg_val = struct.unpack("<L", seg_data)[0]
+                unit = "s"
             elif seg_type == 14:
                 name = "AC Load"
                 seg_val = struct.unpack("f", seg_data)[0] * -1
                 unit = "W"
             elif seg_type == 15:
-                name = "AC Load Frequency?"
-                seg_val = struct.unpack("<HH", seg_data)
+                name = "AC Load Frequency"
+                seg_val = struct.unpack("<H", seg_data[:2])[0]
                 unit = "Hz"
             elif seg_type == 16:
                 name = "DC Load"
@@ -297,6 +297,10 @@ class R3PComms:
                 name = "USB-C Load"
                 seg_val = struct.unpack("f", seg_data)[0] * -1
                 unit = "W"
+            elif seg_type == 19:
+                name = "Remaining Capacity Limit"
+                seg_val = struct.unpack("<L", seg_data)[0]
+                unit = "%"
             elif seg_type == 22:
                 name = "Serial Num"
                 seg_val = struct.unpack(f"{seg_len}s", seg_data)[0]

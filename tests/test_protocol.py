@@ -1,4 +1,5 @@
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -35,3 +36,13 @@ def test_truncated_serial_segment_is_rejected_cleanly():
 
 def test_hid_report_metadata_covers_every_advertised_report():
     assert set(R3PComms.HID_REPORT_IDS) == set(R3PComms.HID_REPORT_SPECS)
+
+
+def test_anonymized_real_serial_capture():
+    fixture = Path(__file__).parent / "fixtures" / "serial_metrics.hex"
+    parsed = R3PComms().serial_segmenter(bytes.fromhex(fixture.read_text().strip()))
+
+    assert parsed["Design Charge Capacity"]["value"] == 12800
+    assert parsed["Remaining Time Limit"]["value"] == 600
+    assert parsed["AC Load Frequency"]["value"] == 50
+    assert parsed["Remaining Capacity Limit"]["value"] == 20

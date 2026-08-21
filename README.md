@@ -34,6 +34,10 @@ with your system's preferred udev rule deployment mechanism, reload the rules,
 and reconnect the device. The rule grants access only to members of `plugdev`
 and only for USB ID `3746:ffff`.
 
+Reverse-engineered interoperability notes for the official desktop client's
+localhost API are maintained in
+[`docs/power-manager-api.md`](docs/power-manager-api.md).
+
 [![usage](doc/usage.gif)](https://asciinema.org/a/735291)
 
 ## Usage
