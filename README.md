@@ -1,6 +1,25 @@
 # r3pcomms
 Local communication with a River 3 Plus over USB HID and/or CDC(ACM)
 
+## Protocol research mode
+
+To expose every HID feature report advertised by the RIVER 3 Plus descriptor,
+including reports which have not been decoded yet, use:
+
+```console
+python -m r3pcomms --hid --all-hid --debug --number 10 --redact-serial
+```
+
+Unknown HID reports and serial segments are emitted losslessly as hexadecimal
+payloads with stable report/segment identifiers. This makes captures suitable
+for comparing controlled device states (idle, charging, discharging, AC/DC/USB
+outputs, and different state-of-charge levels) without silently discarding
+fields. `--all-hid` performs reads only; it does not send control commands.
+
+On Linux, access to both the CDC device and `hidraw` interface may require udev
+rules or temporary elevated privileges. Always use `--redact-serial` before
+sharing captures.
+
 [![usage](doc/usage.gif)](https://asciinema.org/a/735291)
 
 ## Usage

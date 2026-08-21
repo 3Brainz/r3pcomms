@@ -10,7 +10,7 @@ import r3pcomms
 from r3pcomms import R3PComms
 
 
-def run(com: str, usb: str, actions: list[dict], dbg: bool, hide_sn: bool, p, inf, h):
+def run(com: str, usb: str, actions: list[dict], dbg: bool, hide_sn: bool, p, inf, h, all_hid: bool):
     inter_comms_delay_s = p
 
     with R3PComms(com, usb, dbg) as d:
@@ -26,7 +26,10 @@ def run(com: str, usb: str, actions: list[dict], dbg: bool, hide_sn: bool, p, in
                 time.sleep(inter_comms_delay_s)
             else:
                 do_sleep = True
-            result = getattr(d, action["fun"])(*action["args"], **action["kwargs"])
+            kwargs = dict(action["kwargs"])
+            if action["fun"] == "get":
+                kwargs["all_hid"] = all_hid
+            result = getattr(d, action["fun"])(*action["args"], **kwargs)
             t2 = time.time()
             dt = t2 - t1
             t = t2 - t0
@@ -141,6 +144,11 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="output formatted for humans, otherwise json for the robots",
     )
+    parser.add_argument(
+        "--all-hid",
+        action="store_true",
+        help="probe every report ID advertised by the device HID descriptor",
+    )
 
     return parser
 
@@ -179,6 +187,7 @@ def main(cli_args: Sequence[str], prog: str | None = None) -> None:
         "p": args.every,
         "inf": forever,
         "h": args.humanize,
+        "all_hid": args.all_hid,
     }
     run(**run_args)
 

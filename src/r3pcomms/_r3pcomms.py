@@ -21,6 +21,14 @@ class R3PComms:
     h: hid.device | None
     hid_path: str
 
+    # Every feature/input report ID advertised by the RIVER 3 Plus HID
+    # descriptor.  Most are not decoded yet, but exposing their bytes is
+    # essential for reproducible protocol research.
+    HID_REPORT_IDS = (
+        1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        22, 23, 24, 26, 28, 31, 32,
+    )
+
     def __init__(self, comport: str = "", hiddev: str = "", debug: int = 0) -> None:
         self.sequence_num = 0
         self.debug_prints = debug
@@ -170,7 +178,14 @@ class R3PComms:
         ssize = len(source)
         result = {}
         while offset < ssize:
+            if ssize - offset < 3:
+                raise ValueError(f"Truncated serial segment header at offset {offset}")
             seg_type, seg_len = struct.unpack_from("<HB", source, offset=offset)
+            if offset + 3 + seg_len > ssize:
+                raise ValueError(
+                    f"Truncated serial segment {seg_type} at offset {offset}: "
+                    f"expected {seg_len} payload bytes, got {ssize - offset - 3}"
+                )
             seg_data = source[offset + 3 : offset + 3 + seg_len]
             offset += 3 + seg_len
             if seg_type == 3:
@@ -255,9 +270,12 @@ class R3PComms:
                 seg_val = seg_data.hex()
                 unit = "?"
             else:
-                name = "unknown-s"
-                seg_val = struct.unpack("<HH", seg_data)
-                unit = "?"
+                name = f"Serial Segment {seg_type}"
+                # Unknown fields are deliberately lossless.  The former
+                # parser assumed every segment was four bytes and crashed as
+                # soon as firmware returned a differently-sized field.
+                seg_val = seg_data.hex()
+                unit = "raw"
             i = 0
             last_name = name
             while name in result:
@@ -318,17 +336,17 @@ class R3PComms:
 
         return metrics_result
 
-    def get(self) -> dict:
+    def get(self, all_hid: bool = False) -> dict:
         metrics = {}
         if self.s:
             metrics |= self.ser_get()
         if self.h:
-            metrics |= self.hid_get()
+            metrics |= self.hid_get(all_reports=all_hid)
         return metrics
 
-    def hid_get(self) -> dict:
+    def hid_get(self, all_reports: bool = False) -> dict:
         result = {}
-        to_read = (12, 17, 13, 11, 18, 19, 1, 7)
+        to_read = self.HID_REPORT_IDS if all_reports else (12, 17, 13, 11, 18, 19, 1, 7)
         # to_read.append((12, 16))  # Cnst,Var,Abs,Vol
         # to_read.append((17, 16))  # Data,Var,Abs,NoPref,Vol
         # to_read.append((13, 16))  # Cnst,Var,Abs,NoPref,Vol
@@ -338,7 +356,14 @@ class R3PComms:
         # to_read.append((1,  128))  # Cnst,Var,Abs,Vol
         # to_read.append((7,  1))  #
         for rid in to_read:
-            data = self.read_raw_report(rid)
+            try:
+                data = self.read_raw_report(rid)
+            except ValueError:
+                # Some descriptor entries are constant or unavailable through
+                # get_feature_report. Keep probing the remaining reports.
+                if all_reports:
+                    continue
+                raise
             if data:
                 payload = data[1:]
                 if rid == 7:
@@ -358,9 +383,9 @@ class R3PComms:
                         rpt_val = struct.unpack("<H", payload)
                     unit = "min"
                 else:
-                    name = "unknown-h"
+                    name = f"HID Report {rid}"
                     rpt_val = payload.hex()
-                    unit = "?"
+                    unit = "raw"
                 i = 0
                 last_name = name
                 while name in result:
