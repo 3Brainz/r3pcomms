@@ -20,6 +20,11 @@ On Linux, access to both the CDC device and `hidraw` interface may require udev
 rules or temporary elevated privileges. Always use `--redact-serial` before
 sharing captures.
 
+An example rule is provided in `udev/70-ecoflow-river3-plus.rules`. Install it
+with your system's preferred udev rule deployment mechanism, reload the rules,
+and reconnect the device. The rule grants access only to members of `plugdev`
+and only for USB ID `3746:ffff`.
+
 [![usage](doc/usage.gif)](https://asciinema.org/a/735291)
 
 ## Usage
