@@ -20,6 +20,15 @@ On Linux, access to both the CDC device and `hidraw` interface may require udev
 rules or temporary elevated privileges. Always use `--redact-serial` before
 sharing captures.
 
+Some RIVER 3 Plus firmware versions expose a malformed HID report descriptor,
+so Linux may refuse to create a `hidraw` device. In that case, bypass the
+kernel HID parser and perform the same read-only feature-report requests with
+libusb:
+
+```console
+python -m r3pcomms --usb-direct --all-hid --debug --redact-serial
+```
+
 An example rule is provided in `udev/70-ecoflow-river3-plus.rules`. Install it
 with your system's preferred udev rule deployment mechanism, reload the rules,
 and reconnect the device. The rule grants access only to members of `plugdev`

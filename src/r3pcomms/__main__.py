@@ -10,10 +10,10 @@ import r3pcomms
 from r3pcomms import R3PComms
 
 
-def run(com: str, usb: str, actions: list[dict], dbg: bool, hide_sn: bool, p, inf, h, all_hid: bool):
+def run(com: str, usb: str, usb_direct: str, actions: list[dict], dbg: bool, hide_sn: bool, p, inf, h, all_hid: bool):
     inter_comms_delay_s = p
 
-    with R3PComms(com, usb, dbg) as d:
+    with R3PComms(com, usb, dbg, usb_direct) as d:
         d.redact_sn = hide_sn
         do_sleep = False
         t0 = time.time()
@@ -47,13 +47,8 @@ def run(com: str, usb: str, actions: list[dict], dbg: bool, hide_sn: bool, p, in
                 "Run Time": {"type": "i3", "data": t.hex(), "value": t, "unit": "s"}
             } | result
 
-            if "Flags" in result:
-                bit = 10  # AC input bit
-                data_bytes = bytes.fromhex(result["Flags"]["data"][2:])
-                if int.from_bytes(data_bytes) & int(bin(1 << bit)[2:], 2):
-                    ac = True
-                else:
-                    ac = False
+            if "Present Status" in result:
+                ac = result["Present Status"]["value"]["ac_present"]
                 result = result | {
                     "AC In Live": {"type": "d0", "data": ac, "value": ac, "unit": ""}
                 }
@@ -126,6 +121,13 @@ def main_parser() -> argparse.ArgumentParser:
         "optinally specify a VENDOR_ID:PRODUCT_ID to use instead of 3746:ffff",
     )
     parser.add_argument(
+        "--usb-direct",
+        nargs="?",
+        const="3746:ffff",
+        default="",
+        help="read HID feature reports directly with libusb; optionally specify VENDOR_ID:PRODUCT_ID",
+    )
+    parser.add_argument(
         "--number",
         "-n",
         default=argparse.SUPPRESS,
@@ -181,6 +183,7 @@ def main(cli_args: Sequence[str], prog: str | None = None) -> None:
     run_args = {
         "com": args.serial,
         "usb": args.hid,
+        "usb_direct": args.usb_direct,
         "actions": run_actions,
         "dbg": args.debug,
         "hide_sn": args.redact_serial,

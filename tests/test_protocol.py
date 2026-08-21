@@ -31,3 +31,7 @@ def test_truncated_serial_segment_is_rejected_cleanly():
     device = R3PComms()
     with pytest.raises(ValueError, match="Truncated serial segment 99"):
         device.serial_segmenter(struct.pack("<HB", 99, 4) + b"\x01\x02")
+
+
+def test_hid_report_metadata_covers_every_advertised_report():
+    assert set(R3PComms.HID_REPORT_IDS) == set(R3PComms.HID_REPORT_SPECS)

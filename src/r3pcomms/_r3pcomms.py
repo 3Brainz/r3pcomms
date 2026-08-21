@@ -3,6 +3,7 @@
 import serial
 import hid
 import struct
+import usb.core
 from operator import xor
 
 
@@ -19,6 +20,7 @@ class R3PComms:
     held_dbg: bytes
     s: serial.Serial | None
     h: hid.device | None
+    u: object | None
     hid_path: str
 
     # Every feature/input report ID advertised by the RIVER 3 Plus HID
@@ -28,8 +30,56 @@ class R3PComms:
         1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         22, 23, 24, 26, 28, 31, 32,
     )
+    HID_STATUS_BITS = (
+        "charging",
+        "discharging",
+        "ac_present",
+        "battery_present",
+        "below_remaining_capacity_limit",
+        "remaining_time_limit_expired",
+        "need_replacement",
+        "voltage_not_regulated",
+        "fully_charged",
+        "fully_discharged",
+        "shutdown_requested",
+        "shutdown_imminent",
+    )
 
-    def __init__(self, comport: str = "", hiddev: str = "", debug: int = 0) -> None:
+    # Names and scaling come from the USB-IF Usage Tables for HID Power
+    # Devices and the report descriptor shipped by the RIVER 3 Plus.
+    HID_REPORT_SPECS = {
+        1: ("Configured Active Power", "u16", "W"),
+        6: ("Rechargeable", "bool", ""),
+        7: ("Present Status", "status", ""),
+        8: ("Remaining Time Limit", "u16", "s"),
+        9: ("Manufacturer Date", "date", ""),
+        10: ("Configured Voltage", "centivolt", "V"),
+        11: ("Battery Voltage", "centivolt", "V"),
+        12: ("Remaining Capacity", "u8", "%"),
+        13: ("Runtime To Empty", "u16", "s"),
+        14: ("Full Charge Capacity", "u8", "%"),
+        15: ("Warning Capacity Limit", "u8", "%"),
+        16: ("Capacity Granularity 1", "u8", "%"),
+        17: ("Remaining Capacity Limit", "u8", "%"),
+        18: ("Delay Before Shutdown", "s16", "s"),
+        19: ("Delay Before Reboot", "s16", "s"),
+        20: ("Audible Alarm Control", "u8", ""),
+        22: ("Capacity Mode", "u8", ""),
+        23: ("Design Capacity", "u8", "%"),
+        24: ("Capacity Granularity 2", "u8", "%"),
+        26: ("Average Time To Full", "u16", "s"),
+        28: ("Average Time To Empty", "u16", "s"),
+        31: ("Device Chemistry String Index", "u8", ""),
+        32: ("OEM Information String Index", "u8", ""),
+    }
+
+    def __init__(
+        self,
+        comport: str = "",
+        hiddev: str = "",
+        debug: int = 0,
+        usbdev: str = "",
+    ) -> None:
         self.sequence_num = 0
         self.debug_prints = debug
 
@@ -62,6 +112,16 @@ class R3PComms:
                 )
         else:
             self.h = None
+
+        if usbdev:
+            vid, pid = (int(value, 16) for value in usbdev.split(":"))
+            self.u = usb.core.find(idVendor=vid, idProduct=pid)
+            if self.u is None:
+                raise ValueError(
+                    f"Direct USB device {hex(vid)}:{hex(pid)} not found or inaccessible"
+                )
+        else:
+            self.u = None
 
         self.sequence_num = 0
         self.serial_number = b""
@@ -309,6 +369,30 @@ class R3PComms:
                 ret = data
             except Exception as e:
                 raise ValueError(f"Failure reading report {report_id}: {e}")
+        elif self.u:
+            try:
+                if self.debug_prints >= 1:
+                    print(f">u> {report_id:02x}{length:02x}")
+                # USB HID GET_REPORT, feature report, interface 0. This direct
+                # control transfer works even when Linux rejects EcoFlow's
+                # malformed HID report descriptor and creates no hidraw node.
+                data = bytes(
+                    self.u.ctrl_transfer(
+                        0xA1,
+                        0x01,
+                        (0x03 << 8) | report_id,
+                        0,
+                        length,
+                        timeout=1000,
+                    )
+                )
+                if not data or data[0] != report_id:
+                    data = bytes((report_id,)) + data
+                if self.debug_prints >= 1:
+                    print(f"<u< {data.hex()}")
+                ret = data
+            except Exception as e:
+                raise ValueError(f"Failure reading direct USB report {report_id}: {e}")
         else:
             ret = None
 
@@ -340,7 +424,7 @@ class R3PComms:
         metrics = {}
         if self.s:
             metrics |= self.ser_get()
-        if self.h:
+        if self.h or self.u:
             metrics |= self.hid_get(all_reports=all_hid)
         return metrics
 
@@ -366,26 +450,37 @@ class R3PComms:
                 raise
             if data:
                 payload = data[1:]
-                if rid == 7:
-                    name = "Flags"
-                    rpt_val = "0b" + "".join([f"{x:08b}" for x in payload])
-                    unit = ""
-                elif rid == 12:
-                    name = "Charge Level"
+                name, kind, unit = self.HID_REPORT_SPECS.get(
+                    rid, (f"HID Report {rid}", "raw", "raw")
+                )
+                if kind == "u8":
                     rpt_val = payload[0]
-                    unit = "%"
-                elif rid == 13:
-                    name = "Battery Time Remaining"
-                    if payload == bytes.fromhex("3317"):
-                        # I geuss 0x3317 means the battery is not discharging
-                        rpt_val = -1
-                    else:
-                        rpt_val = struct.unpack("<H", payload)
-                    unit = "min"
+                elif kind == "bool":
+                    rpt_val = bool(payload[0])
+                elif kind == "u16":
+                    rpt_val = struct.unpack("<H", payload[:2])[0]
+                elif kind == "s16":
+                    rpt_val = struct.unpack("<h", payload[:2])[0]
+                elif kind == "centivolt":
+                    rpt_val = struct.unpack("<H", payload[:2])[0] / 100
+                elif kind == "status":
+                    bits = int.from_bytes(payload, "little")
+                    rpt_val = {
+                        status: bool(bits & (1 << offset))
+                        for offset, status in enumerate(self.HID_STATUS_BITS)
+                    }
+                elif kind == "date":
+                    encoded = struct.unpack("<H", payload[:2])[0]
+                    year = 1980 + ((encoded >> 9) & 0x7F)
+                    month = (encoded >> 5) & 0x0F
+                    day = encoded & 0x1F
+                    rpt_val = (
+                        f"{year:04d}-{month:02d}-{day:02d}"
+                        if encoded and 1 <= month <= 12 and 1 <= day <= 31
+                        else None
+                    )
                 else:
-                    name = f"HID Report {rid}"
                     rpt_val = payload.hex()
-                    unit = "raw"
                 i = 0
                 last_name = name
                 while name in result:

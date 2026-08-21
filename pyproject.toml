@@ -21,6 +21,7 @@ authors = [
 dependencies = [
   "pyserial",
   "hidapi",
+  "pyusb>=1.3",
 ]
 
 [project.optional-dependencies]

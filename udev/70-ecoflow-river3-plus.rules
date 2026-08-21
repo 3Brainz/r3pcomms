@@ -2,3 +2,4 @@
 # Restricted to this USB vendor/product pair and the local plugdev group.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3746", ATTRS{idProduct}=="ffff", GROUP="plugdev", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="3746", ATTRS{idProduct}=="ffff", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3746", ATTR{idProduct}=="ffff", GROUP="plugdev", MODE="0660", TAG+="uaccess"
