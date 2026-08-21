@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from r3pcomms import R3PComms
+from r3pcomms import (
+    R3PComms,
+    decode_bms_heartbeat,
+    decode_eu_battery_ack,
+    request_eu_battery_data,
+)
 
 
 def segment(segment_type: int, payload: bytes) -> bytes:
@@ -46,3 +51,29 @@ def test_anonymized_real_serial_capture():
     assert parsed["Remaining Time Limit"]["value"] == 600
     assert parsed["AC Load Frequency"]["value"] == 50
     assert parsed["Remaining Capacity Limit"]["value"] == 20
+
+
+def test_bms_heartbeat_health_fields_and_packed_cells():
+    # cycles=142, soh=97, cell_vol=[3298, 3301], real_soh=96.5
+    payload = bytes.fromhex("708e0178618a0204e219e519a5030000c142")
+    parsed = decode_bms_heartbeat(payload)
+
+    assert parsed["cycles"] == 142
+    assert parsed["soh"] == 97
+    assert parsed["cell_vol"] == [3298, 3301]
+    assert parsed["real_soh"] == pytest.approx(96.5)
+
+
+def test_eu_battery_ack_and_safe_request():
+    # soh=98, deep_dsg_cnt=3, bp_cycles=27, round-trip efficiency=91.25
+    payload = bytes.fromhex("10623803681b7d0080b642")
+    parsed = decode_eu_battery_ack(payload)
+
+    assert parsed == {
+        "soh": 98,
+        "deep_dsg_cnt": 3,
+        "bp_cycles": 27,
+        "bp_round_trip_eff": pytest.approx(91.25),
+    }
+    assert request_eu_battery_data() == bytes.fromhex("2801")
+    assert request_eu_battery_data("PACK") == bytes.fromhex("0a045041434b2801")
